@@ -453,6 +453,8 @@
             param: {
                 name: 'tv_phone_sync_code',
                 type: 'input',
+                values: '',
+                placeholder: 'Например: dom2026',
                 default: ''
             },
             field: {
