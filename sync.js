@@ -15,6 +15,7 @@
     var currentMovieTitle = '';
     var currentSeason = null;
     var currentEpisode = null;
+    var currentEpisodeTitle = '';
     var syncTimer = null;
     var lastSentTimestamp = 0;
     var MIN_SEND_INTERVAL = 10000;
@@ -45,6 +46,30 @@
         return m + ':' + (sec < 10 ? '0' : '') + sec;
     }
 
+    function parseEpisodeText(title) {
+        if (!title || typeof title !== 'string') return null;
+        var s = null, e = null;
+        var m = title.match(/s(\d+)\s*[\/\-]\s*(?:серия|эпизод|ep)?\s*(\d+)/i);
+        if (m) { s = parseInt(m[1], 10); e = parseInt(m[2], 10); }
+        if (!e) {
+            m = title.match(/(\d+)\s*сезон[а-я\s,]*(\d+)\s*сери/i);
+            if (m) { s = parseInt(m[1], 10); e = parseInt(m[2], 10); }
+        }
+        if (!e) {
+            m = title.match(/(\d+)[xх](\d+)/i);
+            if (m) { s = parseInt(m[1], 10); e = parseInt(m[2], 10); }
+        }
+        if (!e) {
+            m = title.match(/s(\d+)e(\d+)/i);
+            if (m) { s = parseInt(m[1], 10); e = parseInt(m[2], 10); }
+        }
+        if (!e) {
+            m = title.match(/(?:серия|эпизод|выпуск|серии)\s*(\d+)/i);
+            if (m) { e = parseInt(m[1], 10); }
+        }
+        return { season: s, episode: e };
+    }
+
     function formatLastWatched(data) {
         if (!data || !data.title) return '';
         var ep = '';
@@ -56,6 +81,8 @@
             ep = e + ' серия';
         } else if (s > 0) {
             ep = s + ' сезон';
+        } else if (data.episode_title) {
+            ep = data.episode_title;
         }
 
         var timeStr = formatTime(data.time || 0);
@@ -148,6 +175,7 @@
 
         var season = null;
         var episode = null;
+        var episode_title = '';
 
         var sources = [
             data,
@@ -170,13 +198,28 @@
             }
         }
 
-        var title = movie.title || movie.name || movie.original_title || (data && (data.title || (data.timeline && data.timeline.title))) || '';
+        var mainTitle = movie.title || movie.name || movie.original_title || '';
+        var rawTitle = (data && (data.title || (data.timeline && data.timeline.title))) ||
+                       (playData && (playData.title || (playData.timeline && playData.timeline.title))) ||
+                       '';
+
+        if (rawTitle && rawTitle !== mainTitle) {
+            episode_title = rawTitle;
+            var parsed = parseEpisodeText(rawTitle);
+            if (parsed) {
+                if (season === null && parsed.season !== null) season = parsed.season;
+                if (episode === null && parsed.episode !== null) episode = parsed.episode;
+            }
+        }
+
+        if (!mainTitle && rawTitle) mainTitle = rawTitle;
 
         return {
             movie: movie,
             season: season,
             episode: episode,
-            title: title
+            episode_title: episode_title,
+            title: mainTitle
         };
     }
 
@@ -250,7 +293,8 @@
             hash: currentHash || '',
             title: currentMovieTitle || '',
             season: currentSeason || null,
-            episode: currentEpisode || null
+            episode: currentEpisode || null,
+            episode_title: currentEpisodeTitle || ''
         };
 
         cachedProgress[key] = payload;
@@ -293,7 +337,6 @@
                 var infoText = formatLastWatched(lastData);
                 Lampa.Noty.show('Синхронизация [Код: <b>' + syncCode + '</b>]<br>Последний просмотр: <b>' + infoText + '</b>', { time: 6000 });
             } else {
-                // Если _last_watched еще нет, сканируем все записи базы
                 var allUrl = cleanUrl(FIREBASE_URL) + '/users/' + encodeURIComponent(syncCode) + '.json';
                 ajaxRequest('GET', allUrl, null, function (errAll, allData) {
                     if (!errAll && allData && typeof allData === 'object') {
@@ -418,6 +461,7 @@
                 currentMovieTitle = info.title;
                 currentSeason = info.season;
                 currentEpisode = info.episode;
+                currentEpisodeTitle = info.episode_title;
                 currentContentKey = getContentKey(info.movie, info.season, info.episode, hash);
 
                 if (currentHash && currentContentKey) {
@@ -474,6 +518,7 @@
                 currentMovieTitle = '';
                 currentSeason = null;
                 currentEpisode = null;
+                currentEpisodeTitle = '';
             });
         }
 
@@ -522,7 +567,8 @@
                                 hash: h,
                                 title: currentMovieTitle || '',
                                 season: currentSeason || null,
-                                episode: currentEpisode || null
+                                episode: currentEpisode || null,
+                                episode_title: currentEpisodeTitle || ''
                             };
                             ajaxRequest('PATCH', u, pay, function () {});
 
@@ -661,7 +707,6 @@
         initPlayerListeners();
         initCardListener();
 
-        // Показываем уведомление при запуске Lampa
         setTimeout(function () {
             showStartupNotification();
         }, 1500);
