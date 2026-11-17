@@ -13,6 +13,8 @@
     var currentContentKey = null;
     var currentHash = null;
     var currentMovieTitle = '';
+    var currentSeason = null;
+    var currentEpisode = null;
     var syncTimer = null;
     var lastSentTimestamp = 0;
     var MIN_SEND_INTERVAL = 10000;
@@ -122,12 +124,25 @@
         var season = null;
         var episode = null;
 
-        if (data) {
-            if (typeof data.season !== 'undefined' && data.season !== null) season = data.season;
-            else if (data.timeline && typeof data.timeline.season !== 'undefined') season = data.timeline.season;
+        var sources = [
+            data,
+            data && data.timeline,
+            playData,
+            playData && playData.timeline
+        ];
 
-            if (typeof data.episode !== 'undefined' && data.episode !== null) episode = data.episode;
-            else if (data.timeline && typeof data.timeline.episode !== 'undefined') episode = data.timeline.episode;
+        for (var i = 0; i < sources.length; i++) {
+            var src = sources[i];
+            if (src) {
+                if (season === null) {
+                    if (typeof src.season !== 'undefined' && src.season !== null) season = src.season;
+                    else if (typeof src.season_number !== 'undefined' && src.season_number !== null) season = src.season_number;
+                }
+                if (episode === null) {
+                    if (typeof src.episode !== 'undefined' && src.episode !== null) episode = src.episode;
+                    else if (typeof src.episode_number !== 'undefined' && src.episode_number !== null) episode = src.episode_number;
+                }
+            }
         }
 
         var title = movie.title || movie.name || movie.original_title || (data && (data.title || (data.timeline && data.timeline.title))) || '';
@@ -208,7 +223,9 @@
             percent: progress.percent,
             updated_at: now,
             hash: currentHash || '',
-            title: currentMovieTitle || ''
+            title: currentMovieTitle || '',
+            season: currentSeason || null,
+            episode: currentEpisode || null
         };
 
         cachedProgress[key] = payload;
@@ -260,7 +277,7 @@
         });
     }
 
-    // Сохраняем и обогащаем Timeline.view, не ломая внутренний объект Lampa
+    // Обогащаем Timeline.view, сохраняя res.handler
     var originalTimelineView = Lampa.Timeline.view;
     Lampa.Timeline.view = function (target, meta) {
         var res = originalTimelineView ? originalTimelineView.apply(this, arguments) : null;
@@ -324,6 +341,8 @@
                 var hash = (data && data.timeline && data.timeline.hash) || (data && data.hash) || '';
                 currentHash = hash;
                 currentMovieTitle = info.title;
+                currentSeason = info.season;
+                currentEpisode = info.episode;
                 currentContentKey = getContentKey(info.movie, info.season, info.episode, hash);
 
                 if (currentHash && currentContentKey) {
@@ -378,6 +397,8 @@
                 currentContentKey = null;
                 currentHash = null;
                 currentMovieTitle = '';
+                currentSeason = null;
+                currentEpisode = null;
             });
         }
 
@@ -424,7 +445,9 @@
                                 percent: p.percent,
                                 updated_at: Date.now(),
                                 hash: h,
-                                title: currentMovieTitle || ''
+                                title: currentMovieTitle || '',
+                                season: currentSeason || null,
+                                episode: currentEpisode || null
                             }, function () {});
                         }
                     }
