@@ -6,6 +6,84 @@
     if (window.tv_phone_sync_plugin_loaded) return;
     window.tv_phone_sync_plugin_loaded = true;
 
+    // Автоматическая регистрация названия и автора (@manka81) в списке расширений Lampa
+    function registerPluginMetadata() {
+        try {
+            if (!window.Lampa || !Lampa.Storage) return;
+            var raw = Lampa.Storage.get('plugins', '[]');
+            var plugins = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+            if (Array.isArray(plugins)) {
+                var changed = false;
+                plugins.forEach(function (plug) {
+                    var u = (plug.url || plug.link || '').toLowerCase();
+
+                    // 1. Синхронизация (sync)
+                    if (u.indexOf('/sync') !== -1 || u.indexOf('manka81/sync') !== -1 || u.indexOf('sync.js') !== -1) {
+                        if (plug.name !== 'Синхронизация') {
+                            plug.name = 'Синхронизация';
+                            changed = true;
+                        }
+                        if (plug.author !== '@manka81') {
+                            plug.author = '@manka81';
+                            changed = true;
+                        }
+                    }
+
+                    // 2. Пропуск интро (lampa-skip-intro)
+                    if (u.indexOf('lampa-skip-intro') !== -1 || u.indexOf('skip-intro') !== -1) {
+                        if (plug.name !== 'Пропуск интро') {
+                            plug.name = 'Пропуск интро';
+                            changed = true;
+                        }
+                        if (plug.author !== '@manka81') {
+                            plug.author = '@manka81';
+                            changed = true;
+                        }
+                    }
+                });
+
+                if (changed) {
+                    Lampa.Storage.set('plugins', plugins);
+                    try {
+                        window.localStorage.setItem('plugins', JSON.stringify(plugins));
+                    } catch (e) {}
+                    console.log('[Sync] Названия и авторы (@manka81) успешно обновлены в Lampa.');
+                }
+            }
+        } catch (err) {
+            console.log('[Sync] Ошибка обновления метаданных плагинов:', err);
+        }
+
+        // Обновление DOM открытого окна плагинов в реальном времени
+        try {
+            var items = document.querySelectorAll('.extensions__item');
+            if (items && items.length) {
+                for (var i = 0; i < items.length; i++) {
+                    var el = items[i];
+                    var descr = (el.querySelector('.extensions__item-descr') || {}).innerText || '';
+                    descr = descr.toLowerCase();
+                    if (descr.indexOf('/sync') !== -1 || descr.indexOf('manka81/sync') !== -1 || descr.indexOf('sync.js') !== -1) {
+                        var nameEl = el.querySelector('.extensions__item-name');
+                        var authorEl = el.querySelector('.extensions__item-author');
+                        if (nameEl) nameEl.innerText = 'Синхронизация';
+                        if (authorEl) authorEl.innerText = '@manka81';
+                    }
+                    if (descr.indexOf('lampa-skip-intro') !== -1 || descr.indexOf('skip-intro') !== -1) {
+                        var nameEl2 = el.querySelector('.extensions__item-name');
+                        var authorEl2 = el.querySelector('.extensions__item-author');
+                        if (nameEl2) nameEl2.innerText = 'Пропуск интро';
+                        if (authorEl2) authorEl2.innerText = '@manka81';
+                    }
+                }
+            }
+        } catch (e) {}
+    }
+
+    registerPluginMetadata();
+    setTimeout(registerPluginMetadata, 800);
+    setTimeout(registerPluginMetadata, 2500);
+
     var hashToKey = {};
     var keyToHash = {};
     var cachedProgress = {};
