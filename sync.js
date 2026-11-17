@@ -45,6 +45,31 @@
         return m + ':' + (sec < 10 ? '0' : '') + sec;
     }
 
+    function formatLastWatched(data) {
+        if (!data || !data.title) return '';
+        var ep = '';
+        var s = parseInt(data.season, 10);
+        var e = parseInt(data.episode, 10);
+        if (s > 0 && e > 0) {
+            ep = s + ' сезон, ' + e + ' серия';
+        } else if (e > 0) {
+            ep = e + ' серия';
+        } else if (s > 0) {
+            ep = s + ' сезон';
+        }
+
+        var timeStr = formatTime(data.time || 0);
+        var details = [];
+        if (ep) details.push(ep);
+        if (timeStr && timeStr !== '0:00') details.push(timeStr);
+
+        var res = data.title;
+        if (details.length > 0) {
+            res += ' (' + details.join(' • ') + ')';
+        }
+        return res;
+    }
+
     function ajaxRequest(method, url, data, callback) {
         try {
             var xhr = new XMLHttpRequest();
@@ -237,6 +262,10 @@
 
         var url = getFirebaseEndpoint(syncCode, key);
         ajaxRequest('PATCH', url, payload, function () {});
+
+        // Обновляем запись последнего просмотра
+        var lastUrl = getFirebaseEndpoint(syncCode, '_last_watched');
+        ajaxRequest('PUT', lastUrl, payload, function () {});
     }
 
     function startSyncTimer() {
@@ -251,6 +280,44 @@
             clearInterval(syncTimer);
             syncTimer = null;
         }
+    }
+
+    function showStartupNotification() {
+        if (!isSyncEnabled()) return;
+        var syncCode = getSyncCode();
+        if (!syncCode) return;
+
+        var lastUrl = getFirebaseEndpoint(syncCode, '_last_watched');
+        ajaxRequest('GET', lastUrl, null, function (err, lastData) {
+            if (!err && lastData && lastData.title) {
+                var infoText = formatLastWatched(lastData);
+                Lampa.Noty.show('Синхронизация [Код: <b>' + syncCode + '</b>]<br>Последний просмотр: <b>' + infoText + '</b>', { time: 6000 });
+            } else {
+                // Если _last_watched еще нет, сканируем все записи базы
+                var allUrl = cleanUrl(FIREBASE_URL) + '/users/' + encodeURIComponent(syncCode) + '.json';
+                ajaxRequest('GET', allUrl, null, function (errAll, allData) {
+                    if (!errAll && allData && typeof allData === 'object') {
+                        var latest = null;
+                        for (var k in allData) {
+                            if (allData.hasOwnProperty(k) && (k.indexOf('sync_movie_') === 0 || k.indexOf('sync_hash_') === 0)) {
+                                var item = allData[k];
+                                if (item && item.updated_at && (!latest || item.updated_at > latest.updated_at)) {
+                                    latest = item;
+                                }
+                            }
+                        }
+                        if (latest && latest.title) {
+                            var text = formatLastWatched(latest);
+                            Lampa.Noty.show('Синхронизация [Код: <b>' + syncCode + '</b>]<br>Последний просмотр: <b>' + text + '</b>', { time: 6000 });
+                        } else {
+                            Lampa.Noty.show('Синхронизация подключена! Код: <b>' + syncCode + '</b>', { time: 4000 });
+                        }
+                    } else {
+                        Lampa.Noty.show('Синхронизация подключена! Код: <b>' + syncCode + '</b>', { time: 4000 });
+                    }
+                });
+            }
+        });
     }
 
     function testConnection() {
@@ -272,7 +339,15 @@
             if (err) {
                 Lampa.Noty.show('Ошибка соединения: проверьте вкладку Правила (Rules) в Firebase');
             } else {
-                Lampa.Noty.show('Связь установлена! Код: ' + code);
+                var lastUrl = getFirebaseEndpoint(code, '_last_watched');
+                ajaxRequest('GET', lastUrl, null, function (eLast, lastData) {
+                    if (!eLast && lastData && lastData.title) {
+                        var text = formatLastWatched(lastData);
+                        Lampa.Noty.show('Связь установлена! Код: <b>' + code + '</b><br>Последний просмотр: <b>' + text + '</b>', { time: 5000 });
+                    } else {
+                        Lampa.Noty.show('Связь установлена! Код: <b>' + code + '</b>', { time: 4000 });
+                    }
+                });
             }
         });
     }
@@ -439,7 +514,7 @@
                             cachedProgress[k] = p;
                             cachedProgress[h] = p;
                             var u = getFirebaseEndpoint(syncCode, k);
-                            ajaxRequest('PATCH', u, {
+                            var pay = {
                                 time: p.time,
                                 duration: p.duration,
                                 percent: p.percent,
@@ -448,7 +523,11 @@
                                 title: currentMovieTitle || '',
                                 season: currentSeason || null,
                                 episode: currentEpisode || null
-                            }, function () {});
+                            };
+                            ajaxRequest('PATCH', u, pay, function () {});
+
+                            var lastU = getFirebaseEndpoint(syncCode, '_last_watched');
+                            ajaxRequest('PUT', lastU, pay, function () {});
                         }
                     }
                 }
@@ -581,6 +660,11 @@
         initSettings();
         initPlayerListeners();
         initCardListener();
+
+        // Показываем уведомление при запуске Lampa
+        setTimeout(function () {
+            showStartupNotification();
+        }, 1500);
     }
 
     if (window.appready) {
